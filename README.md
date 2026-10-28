@@ -20,6 +20,19 @@ There is currently no prebuilt release package or installer. Build from source a
 - Fixed CE-ring DMA mapping to walk all `IODMACommand` segments and accept a ring only when they cover the full buffer contiguously within the adapter's 32-bit DMA address range. Added diagnostics for ring allocation failures. This addresses a 4 KiB segment result for a 64 KiB ring observed during recovery on the test system.
 - Improved the Ath10k Connectivity companion app: menu-bar connection states, animated connecting indicator, optional Keychain password storage, preferred saved-network reconnect, Launch at Login, and a copyable access-point security report that does not include the Wi-Fi password.
 
+### Important: Adding support for another QCA9377 board
+
+The kext already matches the QCA9377 PCI ID `168c:0042`. That match only attaches the driver; it does not guarantee that the adapter has a matching board-data payload. Ath10kMac reads the chip revision after reset to choose a supported hardware candidate, then selects an embedded payload by exact PCI subsystem IDs and chip revision.
+
+The current QCA9377 payload is allowlisted for subsystem `1028:1810` (the tested Dell adapter), chip revision `1` (`hw1.1`), and target `0x05020001`. Another laptop can use the same QCA9377 PCI ID but require different board calibration. A PCI match alone does not mean that board is supported.
+
+To add another QCA9377 board:
+
+1. Keep the existing Dell profile. Use the new adapter's actual subsystem IDs and verified board data for that exact board from the appropriate Qualcomm/Linux firmware set.
+2. Extend `scripts/prepare-firmware.py` to validate and package that board data as a separate profile. Do not hand-edit the generated `src/kext/Ath10kPayload.hpp`.
+3. Register the profile for the exact PCI device, subsystem vendor/device, chip revision, and compatible firmware target. Add profile-selection coverage in `tests/test_qca9377_flow.cpp`. If the silicon revision or firmware target differs, add the matching hardware candidate and verified firmware/OTP payload as needed.
+4. Do not spoof the subsystem IDs or reuse Dell calibration blindly. Keep the first test on a backed-up USB EFI and verify driver startup and Wi-Fi before claiming support.
+
 ### Hardware and software validation
 
 The QCA9377 work in this fork was tested on:
@@ -168,6 +181,19 @@ No momento não há pacote de instalação nem versão pré-compilada publicada.
 - Ampliada a cobertura de testes de regressão para identificação da QCA9377, interpretação das suites WPA2, instalação/renovação de chaves e diagnósticos de segurança.
 - Corrigido o mapeamento DMA dos anéis CE para percorrer todos os segmentos `IODMACommand` e aceitar um anel somente quando eles cobrem o buffer inteiro de forma contígua dentro do limite de endereçamento DMA de 32 bits do adaptador. Foram adicionados diagnósticos de falha de alocação. Isso trata um resultado de segmento de 4 KiB para um anel de 64 KiB observado durante a recuperação no sistema de teste.
 - Melhorado o aplicativo Ath10k Connectivity: estados de conexão na barra de menu, indicador animado durante a conexão, armazenamento opcional da senha no Keychain, reconexão na ordem preferida das redes salvas, opção Launch at Login e relatório copiável da segurança anunciada pelo ponto de acesso, sem a senha do Wi-Fi.
+
+### Nota importante: adicionar suporte a outra placa QCA9377
+
+A kext já corresponde ao ID PCI da QCA9377 `168c:0042`. Essa correspondência apenas associa o driver ao dispositivo; não garante que exista um payload de dados de placa compatível. Após o reset, a Ath10kMac lê a revisão do chip para escolher um candidato de hardware suportado e seleciona o payload incorporado usando os IDs PCI de subsystem e a revisão do chip.
+
+O payload QCA9377 atual só permite o subsystem `1028:1810` (o adaptador Dell testado), revisão de chip `1` (`hw1.1`) e target `0x05020001`. Outro notebook pode usar a mesma QCA9377 e exigir dados de calibração diferentes. O ID PCI, sozinho, não significa que a placa seja compatível.
+
+Para adicionar outra placa QCA9377:
+
+1. Mantenha o perfil Dell existente. Use os IDs de subsystem reais do novo adaptador e dados de placa verificados para esse modelo, obtidos do conjunto de firmware Qualcomm/Linux apropriado.
+2. Amplie `scripts/prepare-firmware.py` para validar e empacotar esses dados como um perfil separado. Não edite manualmente o arquivo gerado `src/kext/Ath10kPayload.hpp`.
+3. Registre o perfil para o dispositivo PCI, vendor/device do subsystem, revisão do chip e target de firmware exatos. Adicione cobertura de seleção de perfil em `tests/test_qca9377_flow.cpp`. Se a revisão do chip ou o target de firmware for diferente, inclua o candidato de hardware e o payload de firmware/OTP verificados correspondentes.
+4. Não falsifique os IDs de subsystem nem reutilize os dados de calibração Dell sem validação. Faça o primeiro teste em uma EFI USB com backup e confirme a inicialização do driver e o funcionamento do Wi-Fi antes de declarar suporte.
 
 ### Hardware e software testados
 
