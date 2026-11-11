@@ -15,6 +15,7 @@ FW_MAGIC = b"QCA-ATH10K\0"
 BOARD_KEY = "bus=pci,vendor=168c,device=003e,subsystem-vendor=1028,subsystem-device=0310"
 BOARD_SIZE = 8124
 QCA9377_BOARD_KEY = "bus=pci,vendor=168c,device=0042,subsystem-vendor=1028,subsystem-device=1810"
+KILLER1435_BOARD_KEY = "bus=pci,vendor=168c,device=003e,subsystem-vendor=1a56,subsystem-device=143a"
 
 class BoardNotFound(ValueError):
     """Only a well-formed API2 container without a match allows API1 fallback."""
@@ -41,7 +42,7 @@ def ies(data, magic=None):
         pos += padded
 
 
-def select_board(data, key=BOARD_KEY):
+def select_board(data, key=BOARD_KEY, allow_default=False):
     matches = []
     for tag, block in ies(data, BOARD_MAGIC):
         if tag != 0:  # normal board, not extended-board IE
@@ -54,13 +55,25 @@ def select_board(data, key=BOARD_KEY):
                 if key.encode("ascii") in names:
                     matches.append(value)
                 names = []
+    exact = bool(matches)
     if not matches:
-        raise BoardNotFound("no exact board match")
+        if not allow_default:
+            raise BoardNotFound("no exact board match")
+        # Fall back to the container's default (un-keyed) board entry —
+        # the same data Linux ath10k loads when bmi_id is N/A
+        # (e.g. Killer 1435, subsystem 1a56:143a).
+        for tag, block in ies(data, BOARD_MAGIC):
+            if tag != 0:
+                continue
+            if not any(subtag in (0, 1) for subtag, _ in ies(block)):
+                matches.append(block)
+        if not matches:
+            raise BoardNotFound("no exact or default board match")
     if len(matches) != 1:
         raise ValueError(f"expected one exact board match; found {len(matches)}")
     if len(matches[0]) != BOARD_SIZE:
         raise ValueError(f"unsupported board size: {len(matches[0])}")
-    return matches[0]
+    return matches[0], ("board-api2-exact" if exact else "board-api2-default")
 
 
 def parse_firmware(data):
@@ -149,12 +162,12 @@ def parse_segments(image):
     raise ValueError("SGMT DONE marker missing")
 
 
-def prepare_profile(root, folder, namespace, board_key, profile, identity, allow_fallback=False):
+def prepare_profile(root, folder, namespace, board_key, profile, identity, allow_fallback=False, allow_default=False):
     board_container = (folder / "board-2.bin").read_bytes()
     fw_container = (folder / "firmware-6.bin").read_bytes()
-    selection = "board-api2-exact"
     try:
-        board = select_board(board_container, board_key)
+        board, selection = select_board(board_container, board_key, allow_default=allow_default)
+
     except BoardNotFound:
         if not allow_fallback:
             raise
@@ -245,6 +258,8 @@ def prepare(root):
          ('0x003e', '0x1028', '0x0310', '10', '0x05030000u'), False),
         (root / 'firmware/QCA9377/hw1.0', 'Ath10kPayload9377', QCA9377_BOARD_KEY, 'QCA9377/hw1.1',
          ('0x0042', '0x1028', '0x1810', '1', '0x05020001u'), True),
+        (root / 'firmware', 'Ath10kPayloadKiller1435', KILLER1435_BOARD_KEY, 'QCA6174/hw3.2',
+         ('0x003e', '0x1a56', '0x143a', '10', '0x05030000u'), False, True),
     ]
     for args in profiles:
         files, lines, entry = prepare_profile(root, *args)
